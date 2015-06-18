@@ -1,0 +1,10 @@
+[package]
+name = "graph"
+version = "0.1.0"
+authors = ["Ben Batha <bhbatha@gmail.com>"]
+
+[dependencies]
+typed-arena = "*"
+
+[dependencies.movecell]
+git = "https://github.com/SimonSapin/rust-movecell.git"
