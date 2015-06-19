@@ -165,6 +165,7 @@ fn it_works() {
 
     println!("Graph 1 (mapped):");
     let graph2 = Graph::new();
+    // How do I make sure that they children are updated? Seems like the job of collect maybe
     let root = graph.dfs().map(|e| graph2.own_node(Node::new(e.datum as f32 * 2.1))).collect();
     graph2.set_root(root);
     for node in graph2.dfs() {
