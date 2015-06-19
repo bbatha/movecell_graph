@@ -1,22 +1,22 @@
 extern crate movecell;
 extern crate typed_arena;
 
-use std::collections::HashSet;
-use std::hash::Hash;
+use std::cell::Cell;
+use std::ops::Deref;
 
 use movecell::MoveCell;
 use typed_arena::Arena;
 
-pub struct Graph<'a, T: 'a + Hash + Eq> {
+pub struct Graph<'a, T: 'a> {
     arena: Arena<Node<'a, T>>,
-    root: MoveCell<Option<&'a Node<'a, T>>>
+    root: Cell<Option<&'a Node<'a, T>>>
 }
 
-impl <'a, T: 'a + Hash + Eq> Graph<'a, T> {
+impl <'a, T: 'a> Graph<'a, T> {
     pub fn new() -> Self {
         Graph {
             arena: Arena::new(),
-            root: MoveCell::new(None),
+            root: Cell::new(None),
         }
     }
 
@@ -25,26 +25,38 @@ impl <'a, T: 'a + Hash + Eq> Graph<'a, T> {
         self.arena.alloc(node)
     }
 
+    /// # Panics
+    /// If root is None
+    #[inline]
+    pub fn root(&self) -> &Node<'a, T> {
+        self.root.get().unwrap()
+    }
+
     #[inline]
     pub fn set_root(&'a self, root: Node<'a, T>) -> &'a Node<'a, T> {
         let root = self.new_node(root);
-        self.root.replace(Some(root));
+        self.root.set(Some(root));
         root
-    }
-
-    pub fn traverse<F>(&'a self, f: &F)
-        where F: Fn(&T)
-    {
-        self.root.map(|e| e.traverse(f, &mut HashSet::new()));
     }
 }
 
-pub struct Node<'a, T: 'a + Hash + Eq> {
+impl<'a, T> Deref for Graph<'a, T> {
+    type Target = Node<'a, T>;
+
+    /// # Panics
+    /// If root is not set
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.root()
+    }
+}
+
+pub struct Node<'a, T: 'a> {
     pub datum: T,
     edges: MoveCell<Option<Vec<&'a Node<'a, T>>>>
 }
 
-impl<'a, T: 'a + Hash + Eq> Node<'a, T> {
+impl<'a, T: 'a> Node<'a, T> {
     pub fn new(datum: T) -> Node<'a, T> {
         Node {
             datum: datum,
@@ -59,20 +71,49 @@ impl<'a, T: 'a + Hash + Eq> Node<'a, T> {
         edge
     }
 
-    pub fn traverse<F>(&'a self, f: &F, seen: &mut HashSet<&'a T>)
-        where F: Fn(&T)
-    {
-        if seen.contains(&self.datum) {
-            return;
+    pub fn dfs(&'a self) -> DfsIter<T> {
+        DfsIter {
+            branch_points: vec![(None, self)]
         }
+    }
+}
 
-        f(&self.datum);
-        seen.insert(&self.datum);
-        self.edges.map(|edges| {
-            for e in edges {
-                e.traverse(f, seen);
+pub struct DfsIter<'a, T: 'a> {
+    branch_points: Vec<(Option<usize>, &'a Node<'a, T>)>,
+}
+
+impl<'a, T> Iterator for DfsIter<'a, T> {
+    type Item = &'a Node<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(branch_point) = self.branch_points.pop() {
+            let (index, node) = branch_point;
+
+            // TODO: None panicing version that returns none if no edges
+            if let Some(edges) = node.edges.take() {
+                let found_node = match index {
+                    None => {
+                        self.branch_points.push((Some(0), node));
+                        Some(node)
+                    },
+                    Some(index) => {
+                        if index < edges.len() {
+                            self.branch_points.push((Some(index + 1), node));
+                            self.branch_points.push((None, edges[index]));
+                        }
+                        None
+                    }
+                };
+
+                node.edges.replace(Some(edges));
+                if found_node.is_some() {
+                    return found_node;
+                }
+            } else {
+                return Some(node);
             }
-        });
+        }
+        None
     }
 }
 
@@ -85,5 +126,7 @@ fn it_works() {
     let _node4 = node2.add_edge(graph.new_node(Node::new(4)));
     let _node5 = node2.add_edge(graph.new_node(Node::new(5)));
 
-    graph.traverse(&|n| println!("{}", n));
+    for node in graph.dfs() {
+        println!("{}", node.datum);
+    }
 }
